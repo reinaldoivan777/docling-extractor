@@ -1,39 +1,31 @@
 from flask import Blueprint, current_app, jsonify, request
 
 from ..repositories.document_repository import DocumentRepository
-from ..utils.file import save_validated_upload
+from ..services.document_service import DocumentService
 
 documents_bp = Blueprint("documents", __name__)
 
 
 @documents_bp.post("/documents")
 def upload_document():
-    app_config = current_app.config["APP_CONFIG"]
-    stored_upload = save_validated_upload(request.files, app_config)
-    repository: DocumentRepository = current_app.extensions["document_repository"]
-    document = repository.create_document(
-        document_id=stored_upload.document_id,
-        filename=stored_upload.display_filename,
-        content_type=stored_upload.content_type,
-        extension=stored_upload.extension,
-        size=stored_upload.size,
-        metadata={
-            "original_path": str(stored_upload.original_path),
-        },
+    document_service: DocumentService = current_app.extensions["document_service"]
+    result = document_service.process_upload(
+        request.files,
+        chunker=request.form.get("chunker"),
+        max_tokens=parse_optional_int(request.form.get("max_tokens")),
     )
+    document = result.document
 
-    return (
-        jsonify(
-            {
-                "id": document.id,
-                "filename": document.filename,
-                "content_type": document.content_type,
-                "extension": document.extension,
-                "size": document.size,
-                "status": document.status.value,
-            }
-        ),
-        202,
+    return jsonify(
+        {
+            "id": document.id,
+            "filename": document.filename,
+            "content_type": document.content_type,
+            "extension": document.extension,
+            "size": document.size,
+            "status": document.status.value,
+            "chunk_count": result.chunk_count,
+        }
     )
 
 
@@ -81,3 +73,10 @@ def get_document(document_id: str):
             "metadata": document.metadata,
         }
     )
+
+
+def parse_optional_int(value: str | None) -> int | None:
+    if value in (None, ""):
+        return None
+
+    return int(value)

@@ -155,14 +155,14 @@ class UploadPersistenceTest(unittest.TestCase):
                     content_type="multipart/form-data",
                 )
 
-                self.assertEqual(response.status_code, 202)
+                self.assertEqual(response.status_code, 200)
                 document_id = response.json["id"]
                 repository = app.extensions["document_repository"]
                 document = repository.get_document(document_id)
 
                 self.assertIsNotNone(document)
                 self.assertEqual(document.filename, "note.txt")
-                self.assertEqual(document.status, DocumentStatus.UPLOADED)
+                self.assertEqual(document.status, DocumentStatus.COMPLETED)
 
 
 if __name__ == "__main__":
