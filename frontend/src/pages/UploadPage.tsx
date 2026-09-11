@@ -8,9 +8,10 @@ import type { DocumentSummary, HealthResponse } from "../types/document";
 type UploadPageProps = {
   health: HealthResponse | null;
   healthError: string | null;
+  onDocumentReady: (documentId: string) => void;
 };
 
-export function UploadPage({ health, healthError }: UploadPageProps) {
+export function UploadPage({ health, healthError, onDocumentReady }: UploadPageProps) {
   const [file, setFile] = useState<File | null>(null);
   const [chunker, setChunker] = useState("hybrid");
   const [maxTokens, setMaxTokens] = useState(health?.config?.default_chunk_max_tokens ?? 512);
@@ -37,6 +38,7 @@ export function UploadPage({ health, healthError }: UploadPageProps) {
     try {
       const document = await documentApi.uploadDocument({ file, chunker, maxTokens });
       setCompletedDocument(document);
+      onDocumentReady(document.id);
     } catch (caught) {
       setError(
         caught instanceof ApiError

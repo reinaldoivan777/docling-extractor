@@ -269,6 +269,181 @@ select:disabled {
   background: #f8fafc;
 }
 
+.top-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.summary-band,
+.result-panel {
+  background: #ffffff;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+}
+
+.summary-band {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.summary-band h2 {
+  font-size: 1.25rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.summary-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.summary-grid div {
+  align-items: start;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+}
+
+.result-panel {
+  display: grid;
+}
+
+.tabs {
+  border-bottom: 1px solid #d8dee8;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 8px;
+}
+
+.tabs button {
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #475569;
+  cursor: pointer;
+  font-weight: 800;
+  min-height: 38px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.tabs button.is-active {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.tab-body {
+  padding: 16px;
+}
+
+.content-block {
+  background: #0f172a;
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  margin: 0;
+  overflow: auto;
+  padding: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.large-block {
+  max-height: 68vh;
+}
+
+.structure-view {
+  display: grid;
+  gap: 16px;
+}
+
+.heading-list {
+  display: grid;
+  gap: 8px;
+}
+
+.heading-list div {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.chunk-list {
+  display: grid;
+  gap: 12px;
+}
+
+.chunk-card {
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.chunk-header {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.chunk-header h3 {
+  font-size: 1rem;
+  margin: 0 0 4px;
+}
+
+.chunk-header p {
+  color: #64748b;
+  margin: 0;
+}
+
+.chunk-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.toggle-control {
+  align-items: center;
+  color: #334155;
+  display: flex;
+  font-size: 0.875rem;
+  font-weight: 700;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.toggle-control input {
+  min-height: 0;
+  width: auto;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-row span {
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 999px;
+  color: #3730a3;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  padding: 4px 8px;
+}
+
 dl {
   display: grid;
   gap: 10px;
@@ -305,7 +480,15 @@ dd {
   }
 
   .field-grid,
-  .processing-steps {
+  .processing-steps,
+  .summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .chunk-header,
+  .chunk-actions,
+  .top-actions {
+    align-items: stretch;
+    display: grid;
   }
 }
