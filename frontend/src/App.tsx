@@ -1,31 +1,19 @@
 import { useEffect, useState } from "react";
 
+import { ApiError, documentApi } from "./services/documentApi";
 import "./styles.css";
-
-type HealthResponse = {
-  status: string;
-  services: {
-    api: string;
-    docling: string;
-  };
-};
+import type { HealthResponse } from "./types/document";
 
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/health")
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Health check failed with ${response.status}`);
-        }
-
-        return response.json() as Promise<HealthResponse>;
-      })
+    documentApi
+      .health()
       .then(setHealth)
       .catch((caught: unknown) => {
-        setError(caught instanceof Error ? caught.message : "Health check failed");
+        setError(caught instanceof ApiError ? caught.message : "Health check failed");
       });
   }, []);
 
