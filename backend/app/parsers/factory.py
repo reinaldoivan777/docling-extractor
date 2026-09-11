@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 from ..config import AppConfig
+from ..services.docling_service import DoclingService
 from ..utils.errors import UnsupportedFileTypeError
 from .base import DocumentParser
 from .docling_parser import DoclingParser
@@ -18,11 +19,12 @@ class ParserFactory:
         self,
         config: AppConfig,
         *,
+        docling_service: DoclingService | None = None,
         docling_parser_builder: ParserBuilder | None = None,
         text_parser_builder: ParserBuilder | None = None,
     ):
         self.config = config
-        self.docling_parser_builder = docling_parser_builder or DoclingParser
+        self.docling_parser_builder = docling_parser_builder or (lambda: DoclingParser(docling_service))
         self.text_parser_builder = text_parser_builder or TextParser
 
     def get(self, extension: str) -> DocumentParser:
