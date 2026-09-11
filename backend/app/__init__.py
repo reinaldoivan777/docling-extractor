@@ -7,6 +7,7 @@ from .config import load_config
 from .repositories.document_repository import DocumentRepository, sqlite_path_from_url
 from .routes.documents import documents_bp
 from .routes.health import health_bp
+from .services.docling_service import DoclingService
 from .utils.errors import register_error_handlers
 
 
@@ -21,6 +22,7 @@ def create_app() -> Flask:
     )
     document_repository.init_db()
     app.extensions["document_repository"] = document_repository
+    app.extensions["docling_service"] = DoclingService(app_config)
 
     CORS(app)
     register_error_handlers(app)

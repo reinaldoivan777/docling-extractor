@@ -6,14 +6,27 @@ health_bp = Blueprint("health", __name__)
 @health_bp.get("/health")
 def health():
     app_config = current_app.config["APP_CONFIG"]
+    docling = current_app.extensions["docling_service"].readiness()
+    status = "ok" if docling.ready else "degraded"
+    docling_payload = {
+        "ready": docling.ready,
+        "status": docling.status,
+        "ocr_enabled": docling.ocr_enabled,
+        "table_structure_enabled": docling.table_structure_enabled,
+        "xls_support": docling.xls_support,
+    }
+    if docling.error_code:
+        docling_payload["error_code"] = docling.error_code
+        docling_payload["error_message"] = docling.error_message
 
     return jsonify(
         {
-            "status": "ok",
+            "status": status,
             "services": {
                 "api": "healthy",
-                "docling": "not_configured",
+                "docling": docling.status,
             },
+            "docling": docling_payload,
             "config": {
                 "max_upload_size_mb": app_config.max_upload_size_mb,
                 "max_document_pages": app_config.max_document_pages,
