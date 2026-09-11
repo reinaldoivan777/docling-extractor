@@ -1,7 +1,10 @@
+from pathlib import Path
+
 from flask import Flask
 from flask_cors import CORS
 
 from .config import load_config
+from .repositories.document_repository import DocumentRepository, sqlite_path_from_url
 from .routes.documents import documents_bp
 from .routes.health import health_bp
 from .utils.errors import register_error_handlers
@@ -12,6 +15,12 @@ def create_app() -> Flask:
     app_config = load_config()
     app.config["APP_CONFIG"] = app_config
     app.config["MAX_CONTENT_LENGTH"] = app_config.max_upload_size_bytes
+    document_repository = DocumentRepository(
+        database_path=sqlite_path_from_url(app_config.database_url, Path(app.instance_path)),
+        storage_path=app_config.storage_path,
+    )
+    document_repository.init_db()
+    app.extensions["document_repository"] = document_repository
 
     CORS(app)
     register_error_handlers(app)
