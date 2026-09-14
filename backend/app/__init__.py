@@ -34,6 +34,7 @@ def create_app() -> Flask:
         parser_factory=ParserFactory(app_config, docling_service=docling_service),
         serialization_service=SerializationService(),
         chunking_service=ChunkingService(app_config),
+        logger=app.logger,
     )
 
     CORS(app)

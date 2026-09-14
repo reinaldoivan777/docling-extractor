@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import logging
 from time import monotonic
 from typing import Callable
 
@@ -30,6 +31,7 @@ class DocumentService:
         serialization_service: SerializationService,
         chunking_service: ChunkingService,
         clock: Callable[[], float] = monotonic,
+        logger: logging.Logger | None = None,
     ):
         self.config = config
         self.repository = repository
@@ -37,6 +39,7 @@ class DocumentService:
         self.serialization_service = serialization_service
         self.chunking_service = chunking_service
         self.clock = clock
+        self.logger = logger or logging.getLogger(__name__)
 
     def process_upload(
         self,
@@ -57,19 +60,46 @@ class DocumentService:
                 "original_path": str(stored_upload.original_path),
             },
         )
+        self._log_event("document.uploaded", document=document)
+        conversion_duration_ms = 0
+        serialization_duration_ms = 0
+        chunking_duration_ms = 0
 
         try:
             self._ensure_not_timed_out(started_at)
             self.repository.update_document_status(document.id, DocumentStatus.CONVERTING)
+            self._log_event("document.conversion.started", document=document)
+            conversion_started_at = self.clock()
             parser = self.parser_factory.get(document.extension)
             parsed = parser.parse(stored_upload.original_path)
+            conversion_duration_ms = duration_ms(conversion_started_at, self.clock())
 
             self._ensure_not_timed_out(started_at)
+            self._log_event(
+                "document.conversion.completed",
+                document=document,
+                parsed=parsed,
+                duration_ms=conversion_duration_ms,
+            )
+            if parsed.metadata.get("ocr_used") is True:
+                self._log_event("document.ocr.used", document=document, parsed=parsed)
+
             self.repository.update_document_status(document.id, DocumentStatus.NORMALIZING)
+            self._log_event("document.serialization.started", document=document, parsed=parsed)
+            serialization_started_at = self.clock()
             serialized = self.serialization_service.serialize(parsed, stored_upload.document_dir)
+            serialization_duration_ms = duration_ms(serialization_started_at, self.clock())
 
             self._ensure_not_timed_out(started_at)
+            self._log_event(
+                "document.serialization.completed",
+                document=document,
+                parsed=parsed,
+                duration_ms=serialization_duration_ms,
+            )
             self.repository.update_document_status(document.id, DocumentStatus.CHUNKING)
+            self._log_event("document.chunking.started", document=document, parsed=parsed)
+            chunking_started_at = self.clock()
             chunks = self.chunking_service.chunk(
                 parsed,
                 document_id=document.id,
@@ -78,9 +108,20 @@ class DocumentService:
                 chunker=chunker,
                 max_tokens=max_tokens,
             )
+            chunking_duration_ms = duration_ms(chunking_started_at, self.clock())
+
+            self._ensure_not_timed_out(started_at)
+            self._log_event(
+                "document.chunking.completed",
+                document=document,
+                parsed=parsed,
+                duration_ms=chunking_duration_ms,
+                chunk_count=len(chunks),
+            )
             self.repository.save_chunks(document.id, chunks)
 
             self._ensure_not_timed_out(started_at)
+            total_duration_ms = duration_ms(started_at, self.clock())
             metadata = {
                 **document.metadata,
                 **parsed.metadata,
@@ -94,7 +135,10 @@ class DocumentService:
                     "upload_size_bytes": document.size,
                     "markdown_character_count": len(serialized.markdown),
                     "chunk_count": len(chunks),
-                    "total_duration_ms": int((self.clock() - started_at) * 1000),
+                    "conversion_duration_ms": conversion_duration_ms,
+                    "serialization_duration_ms": serialization_duration_ms,
+                    "chunking_duration_ms": chunking_duration_ms,
+                    "total_duration_ms": total_duration_ms,
                 },
                 "chunking": {
                     "chunker": chunker or self.config.default_chunker,
@@ -118,6 +162,11 @@ class DocumentService:
                 error_code=error.code.value,
                 error_message=error.message,
             )
+            self._log_event(
+                "document.processing.failed",
+                document=document,
+                error_code=error.code.value,
+            )
             raise
         except Exception as error:
             app_error = AppError(
@@ -129,6 +178,11 @@ class DocumentService:
                 DocumentStatus.FAILED,
                 error_code=app_error.code.value,
                 error_message=app_error.message,
+            )
+            self._log_event(
+                "document.processing.failed",
+                document=document,
+                error_code=app_error.code.value,
             )
             raise app_error from error
 
@@ -148,3 +202,47 @@ class DocumentService:
                 code=ErrorCode.PROCESSING_TIMEOUT,
                 message="Document processing timed out.",
             )
+
+    def _log_event(
+        self,
+        event: str,
+        *,
+        document: DocumentRecord,
+        parsed=None,
+        duration_ms: int | None = None,
+        chunk_count: int | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        fields = {
+            "event": event,
+            "document_id": document.id,
+            "filename": document.filename,
+            "content_type": document.content_type,
+        }
+        if parsed is not None:
+            fields.update(
+                {
+                    "source_format": parsed.source_format,
+                    "page_count": parsed.metadata.get("page_count"),
+                    "ocr_used": parsed.metadata.get("ocr_used"),
+                    "table_count": parsed.metadata.get("table_count"),
+                }
+            )
+        if duration_ms is not None:
+            fields["duration_ms"] = duration_ms
+        if chunk_count is not None:
+            fields["chunk_count"] = chunk_count
+        if error_code is not None:
+            fields["error_code"] = error_code
+
+        self.logger.info(
+            event,
+            extra={
+                "event": event,
+                "structured_fields": fields,
+            },
+        )
+
+
+def duration_ms(started_at: float, ended_at: float) -> int:
+    return max(0, int((ended_at - started_at) * 1000))

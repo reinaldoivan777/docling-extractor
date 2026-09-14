@@ -1,0 +1,9 @@
+<html>
+  <body>
+    <table>
+      <tr><th>Name</th><th>Value</th></tr>
+      <tr><td>Alpha</td><td>10</td></tr>
+      <tr><td>Beta</td><td>20</td></tr>
+    </table>
+  </body>
+</html>

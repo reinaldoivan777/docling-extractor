@@ -1,4 +1,5 @@
 from io import BytesIO
+import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -36,13 +37,17 @@ def make_config(root: Path, *, timeout_seconds: int = 120) -> AppConfig:
     )
 
 
-def upload_files(filename: str = "note.txt", content: bytes = b"one two three four") -> MultiDict:
+def upload_files(
+    filename: str = "note.txt",
+    content: bytes = b"one two three four",
+    content_type: str = "text/plain",
+) -> MultiDict:
     return MultiDict(
         {
             "file": FileStorage(
                 stream=BytesIO(content),
                 filename=filename,
-                content_type="text/plain",
+                content_type=content_type,
             )
         }
     )
@@ -77,6 +82,22 @@ class SlowParser:
         )
 
 
+class MetadataParser:
+    def parse(self, file_path):
+        return ParsedDocument(
+            source_format="pdf",
+            structured_document={"type": "text", "content": "secret body text with citations"},
+            text="secret body text with citations",
+            markdown="secret body text with citations",
+            metadata={
+                "source_format": "pdf",
+                "page_count": 7,
+                "table_count": 2,
+                "ocr_used": True,
+            },
+        )
+
+
 class SequenceClock:
     def __init__(self, values):
         self.values = list(values)
@@ -86,6 +107,15 @@ class SequenceClock:
         if self.values:
             self.last = self.values.pop(0)
         return self.last
+
+
+class ListHandler(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.records = []
+
+    def emit(self, record):
+        self.records.append(record)
 
 
 class DocumentServiceTest(unittest.TestCase):
@@ -102,7 +132,7 @@ class DocumentServiceTest(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    def make_service(self, parser, *, clock=None, config=None):
+    def make_service(self, parser, *, clock=None, config=None, logger=None):
         active_config = config or self.config
         return DocumentService(
             config=active_config,
@@ -111,6 +141,7 @@ class DocumentServiceTest(unittest.TestCase):
             serialization_service=SerializationService(),
             chunking_service=ChunkingService(active_config),
             clock=clock or (lambda: 0),
+            logger=logger,
         )
 
     def test_successful_upload_reaches_completed_and_persists_artifacts_and_chunks(self):
@@ -130,6 +161,9 @@ class DocumentServiceTest(unittest.TestCase):
         self.assertTrue((self.config.storage_path / document.id / "chunks.json").exists())
         self.assertEqual(document.metadata["metrics"]["chunk_count"], 2)
         self.assertEqual(document.metadata["chunking"]["max_tokens"], 3)
+        self.assertIn("conversion_duration_ms", document.metadata["metrics"])
+        self.assertIn("serialization_duration_ms", document.metadata["metrics"])
+        self.assertIn("chunking_duration_ms", document.metadata["metrics"])
 
     def test_failure_marks_document_failed_and_persists_error(self):
         service = self.make_service(FailingParser())
@@ -161,6 +195,77 @@ class DocumentServiceTest(unittest.TestCase):
         self.assertEqual(context.exception.code, ErrorCode.PROCESSING_TIMEOUT)
         self.assertEqual(document.status, DocumentStatus.FAILED)
         self.assertEqual(document.error_code, ErrorCode.PROCESSING_TIMEOUT.value)
+
+    def test_logs_lifecycle_events_and_persists_stage_durations_without_document_content(self):
+        logger = logging.getLogger("document-service-test")
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        handler = ListHandler()
+        logger.addHandler(handler)
+        self.addCleanup(logger.removeHandler, handler)
+        clock = SequenceClock([0, 0, 1, 1.25, 1.25, 1.3, 1.45, 1.45, 1.5, 1.75, 1.75, 1.75, 2.0])
+        service = self.make_service(MetadataParser(), clock=clock, logger=logger)
+
+        result = service.process_upload(
+            upload_files(filename="report.pdf", content_type="application/pdf"),
+            max_tokens=3,
+        )
+        document = self.repository.get_document(result.document.id)
+        events = [record.event for record in handler.records]
+
+        self.assertEqual(
+            events,
+            [
+                "document.uploaded",
+                "document.conversion.started",
+                "document.conversion.completed",
+                "document.ocr.used",
+                "document.serialization.started",
+                "document.serialization.completed",
+                "document.chunking.started",
+                "document.chunking.completed",
+            ],
+        )
+        completed = handler.records[2].structured_fields
+        self.assertEqual(completed["document_id"], document.id)
+        self.assertEqual(completed["filename"], "report.pdf")
+        self.assertEqual(completed["content_type"], "application/pdf")
+        self.assertEqual(completed["source_format"], "pdf")
+        self.assertEqual(completed["page_count"], 7)
+        self.assertTrue(completed["ocr_used"])
+        self.assertEqual(completed["table_count"], 2)
+        self.assertEqual(completed["duration_ms"], 250)
+        self.assertEqual(handler.records[-1].structured_fields["chunk_count"], 2)
+        self.assertEqual(document.metadata["metrics"]["conversion_duration_ms"], 250)
+        self.assertEqual(document.metadata["metrics"]["serialization_duration_ms"], 149)
+        self.assertEqual(document.metadata["metrics"]["chunking_duration_ms"], 250)
+        self.assertEqual(document.metadata["metrics"]["total_duration_ms"], 2000)
+
+        logged_payload = " ".join(
+            f"{record.getMessage()} {getattr(record, 'structured_fields', {})}"
+            for record in handler.records
+        )
+        self.assertNotIn("secret body text with citations", logged_payload)
+
+    def test_processing_failure_logs_stable_error_code_without_content(self):
+        logger = logging.getLogger("document-service-failure-test")
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        handler = ListHandler()
+        logger.addHandler(handler)
+        self.addCleanup(logger.removeHandler, handler)
+        service = self.make_service(FailingParser(), logger=logger)
+
+        with self.assertRaises(AppError):
+            service.process_upload(upload_files(content=b"do not log this body"))
+
+        failure = handler.records[-1]
+        self.assertEqual(failure.event, "document.processing.failed")
+        self.assertEqual(
+            failure.structured_fields["error_code"],
+            ErrorCode.DOCUMENT_CONVERSION_FAILED.value,
+        )
+        self.assertNotIn("do not log this body", str(failure.structured_fields))
 
 
 if __name__ == "__main__":
